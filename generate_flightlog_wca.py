@@ -3,14 +3,26 @@ import csv
 from datetime import datetime
 from PIL import Image  # Add PIL library for image format checking
 
-# Prompt the user for the folder containing the TSV file
-tsv_folder = input("Enter the folder containing the TSV file: ")
+# Prompt the user for the full path to the TSV file
+tsv_filepath_input = input("Enter the full path to the TSV file: ")
+
+# Remove double quotes from the input if present
+tsv_filepath = tsv_filepath_input.strip('\"')
+
+# Extract the folder containing the TSV file
+tsv_folder = os.path.dirname(tsv_filepath)
+
+# Prompt the user for the folder containing the images
+image_folder_input = input("Enter the folder containing the images: ")
+
+# Remove double quotes from the input if present
+image_folder = image_folder_input.strip('\"')
 
 # List all common image formats to accept
 COMMON_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
 
 # Configuration
-TSV_FILENAME = "H2021.NAV3D.M1.sampled.tsv"
+TSV_FILENAME = os.path.basename(tsv_filepath)
 TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S"
 REFERENCE_DEPTH = 0
 
@@ -69,15 +81,14 @@ def generate_flight_log(image_data, output_filename):
                 unique_locations.add(line)
 
 if __name__ == "__main__":
-    tsv_filename = os.path.join(tsv_folder, TSV_FILENAME)
+    tsv_filename = tsv_filepath
     data_rows = read_tsv_data(tsv_filename)
-
-    image_folder = tsv_folder
-    image_data = read_image_filenames(image_folder)
 
     # Prompt the user for the folder where the flight log should be exported
     output_folder = input("Enter the folder where the flight log should be exported: ")
     flight_log_filename = os.path.join(output_folder, "flight_log.txt")
+
+    image_data = read_image_filenames(image_folder)
 
     estimate_location(image_data, data_rows)
     generate_flight_log(image_data, flight_log_filename)
