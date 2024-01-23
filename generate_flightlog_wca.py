@@ -23,7 +23,7 @@ COMMON_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
 
 # Configuration
 TSV_FILENAME = os.path.basename(tsv_filepath)
-TIMESTAMP_FORMAT = "%Y%m%dT%H%M%S"
+TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"  # Updated format
 REFERENCE_DEPTH = 0
 
 # Function to read TSV data
@@ -50,11 +50,17 @@ def read_image_filenames(image_folder):
     image_data = []
     for filename in os.listdir(image_folder):
         if is_image_file(filename):  # Check if the file is an image
-            timestamp_str = filename[:15]
-            image_data.append({
-                "FILENAME": filename,
-                "TIMESTAMP": datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
-            })
+            parts = filename.split("_")
+            if len(parts) >= 2:
+                timestamp_str = parts[1]  # Extract the timestamp part
+                print(f"Found filename: {filename}, extracted timestamp: {timestamp_str}")
+                try:
+                    image_data.append({
+                        "FILENAME": filename,
+                        "TIMESTAMP": datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
+                    })
+                except ValueError as e:
+                    print(f"Error parsing timestamp in filename: {filename}")
     return image_data
 
 # Function to check if a file is an image
@@ -70,9 +76,10 @@ def estimate_location(image_data, data_rows):
         image["ALTITUDE_EST"] = REFERENCE_DEPTH - float(closest_match["DEPTH"])
 
 # Function to generate flight log
-def generate_flight_log(image_data, output_filename):
+def generate_flight_log(image_data, image_folder):
+    flight_log_filename = os.path.join(image_folder, "flight_log.txt")
     unique_locations = set()
-    with open(output_filename, "w") as f:
+    with open(flight_log_filename, "w") as f:
         f.write("FILENAME;LAT_EST;LONG_EST;ALTITUDE_EST\n")  # Header
         for image in image_data:
             line = "{};{};{};{}".format(image["FILENAME"], image["LAT_EST"], image["LONG_EST"], image["ALTITUDE_EST"])
@@ -84,14 +91,10 @@ if __name__ == "__main__":
     tsv_filename = tsv_filepath
     data_rows = read_tsv_data(tsv_filename)
 
-    # Prompt the user for the folder where the flight log should be exported
-    output_folder = input("Enter the folder where the flight log should be exported: ")
-    flight_log_filename = os.path.join(output_folder, "flight_log.txt")
-
     image_data = read_image_filenames(image_folder)
 
     estimate_location(image_data, data_rows)
-    generate_flight_log(image_data, flight_log_filename)
+    generate_flight_log(image_data, image_folder)
 
     # Print summary
     print("Files examined: {}".format(len(image_data)))
