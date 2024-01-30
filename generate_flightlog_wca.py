@@ -1,33 +1,28 @@
 import os
 import csv
 from datetime import datetime
-from PIL import Image  # Add PIL library for image format checking
-
-# Prompt the user for the full path to the TSV file
-tsv_filepath_input = input("Enter the full path to the TSV file: ")
-
-# Remove double quotes from the input if present
-tsv_filepath = tsv_filepath_input.strip('\"')
-
-# Extract the folder containing the TSV file
-tsv_folder = os.path.dirname(tsv_filepath)
-
-# Prompt the user for the folder containing the images
-image_folder_input = input("Enter the folder containing the images: ")
-
-# Remove double quotes from the input if present
-image_folder = image_folder_input.strip('\"')
-
-# List all common image formats to accept
-COMMON_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
+from PIL import Image  # Used for image file verification
+import sys  # For command line arguments
 
 # Configuration
-TSV_FILENAME = os.path.basename(tsv_filepath)
-TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"  # Updated format
+TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
 REFERENCE_DEPTH = 0
+COMMON_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
 
-# Function to read TSV data
+def is_valid_directory(path):
+    """Check if a directory is valid and accessible."""
+    if not os.path.isdir(path):
+        print(f"Directory does not exist: {path}")
+        sys.exit(1)
+
+def is_valid_file(path):
+    """Check if a file is valid and accessible."""
+    if not os.path.isfile(path):
+        print(f"File does not exist: {path}")
+        sys.exit(1)
+
 def read_tsv_data(filename):
+    """Read TSV data from the given file."""
     data_rows = []
     try:
         with open(filename, "r") as tsvfile:
@@ -42,42 +37,58 @@ def read_tsv_data(filename):
                 })
     except FileNotFoundError:
         print("TSV file not found.")
-        exit()
+        sys.exit(1)
     return data_rows
 
-# Function to read image filenames and timestamps
+def is_image_file(filename, image_folder):
+    """Check if a file is an image using its MIME type."""
+    try:
+        Image.open(os.path.join(image_folder, filename)).verify()
+        return True
+    except IOError:
+        return False
+
+def parse_timestamp_from_filename(filename):
+    """Extract and parse the timestamp from the filename."""
+    parts = filename.split("_")
+    if len(parts) < 2:
+        print(f"Filename does not contain a valid timestamp: {filename}")
+        return None
+    timestamp_str = parts[1].split(".")[0]  # Extract and clean timestamp
+    try:
+        return datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
+    except ValueError:
+        print(f"Error parsing timestamp in filename: {filename}")
+        return None
+
 def read_image_filenames(image_folder):
+    """Read image filenames and timestamps from the given folder."""
     image_data = []
     for filename in os.listdir(image_folder):
-        if is_image_file(filename):  # Check if the file is an image
-            parts = filename.split("_")
-            if len(parts) >= 2:
-                timestamp_str = parts[1]  # Extract the timestamp part
-                print(f"Found filename: {filename}, extracted timestamp: {timestamp_str}")
-                try:
-                    image_data.append({
-                        "FILENAME": filename,
-                        "TIMESTAMP": datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
-                    })
-                except ValueError as e:
-                    print(f"Error parsing timestamp in filename: {filename}")
+        if is_image_file(filename, image_folder):
+            timestamp = parse_timestamp_from_filename(filename)
+            if timestamp:
+                image_data.append({
+                    "FILENAME": filename,
+                    "TIMESTAMP": timestamp
+                })
     return image_data
 
-# Function to check if a file is an image
-def is_image_file(filename):
-    return any(filename.lower().endswith(ext) for ext in COMMON_IMAGE_EXTENSIONS)
-
-# Function to estimate location
 def estimate_location(image_data, data_rows):
+    """Estimate location for each image based on timestamp."""
     for image in image_data:
         closest_match = min(data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
         image["LAT_EST"] = closest_match["LAT"]
         image["LONG_EST"] = closest_match["LONG"]
         image["ALTITUDE_EST"] = REFERENCE_DEPTH - float(closest_match["DEPTH"])
 
-# Function to generate flight log
 def generate_flight_log(image_data, image_folder):
+    """Generate a flight log file from the image data."""
     flight_log_filename = os.path.join(image_folder, "flight_log.txt")
+    if os.path.exists(flight_log_filename):
+        print(f"Flight log file already exists: {flight_log_filename}")
+        sys.exit(1)
+    
     unique_locations = set()
     with open(flight_log_filename, "w") as f:
         f.write("FILENAME;LAT_EST;LONG_EST;ALTITUDE_EST\n")  # Header
@@ -87,15 +98,21 @@ def generate_flight_log(image_data, image_folder):
                 f.write(line + "\n")
                 unique_locations.add(line)
 
-if __name__ == "__main__":
-    tsv_filename = tsv_filepath
-    data_rows = read_tsv_data(tsv_filename)
+def main():
+    tsv_filepath = input("Enter the full path to the TSV file: ").strip('\"')
+    is_valid_file(tsv_filepath)
 
+    image_folder = input("Enter the folder containing the images: ").strip('\"')
+    is_valid_directory(image_folder)
+
+    data_rows = read_tsv_data(tsv_filepath)
     image_data = read_image_filenames(image_folder)
 
     estimate_location(image_data, data_rows)
     generate_flight_log(image_data, image_folder)
 
-    # Print summary
     print("Files examined: {}".format(len(image_data)))
     print("Data rows interpreted: {}".format(len(data_rows)))
+
+if __name__ == "__main__":
+    main()
