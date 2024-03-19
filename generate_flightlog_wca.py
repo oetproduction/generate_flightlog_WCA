@@ -6,7 +6,6 @@ import sys  # For command line arguments
 
 # Configuration
 TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
-REFERENCE_DEPTH = 0
 COMMON_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
 
 def is_valid_directory(path):
@@ -80,7 +79,7 @@ def estimate_location(image_data, data_rows):
         closest_match = min(data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
         image["LAT_EST"] = closest_match["LAT"]
         image["LONG_EST"] = closest_match["LONG"]
-        image["ALTITUDE_EST"] = REFERENCE_DEPTH - float(closest_match["DEPTH"])
+        image["ALTITUDE_EST"] = float(closest_match["DEPTH"])
 
 def generate_flight_log(image_data, image_folder):
     """Generate a flight log file from the image data."""
