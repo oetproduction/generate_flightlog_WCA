@@ -29,11 +29,12 @@ def read_tsv_data(filename):
             next(reader)  # Skip the header row
             for row in reader:
                 # Assuming the columns are in the same order as in the TSV structure
+                depth = float(row[13]) if row[13] else None
                 data_rows.append({
                     "TIME": datetime.fromisoformat(row[0]),  # Timestamp
                     "LAT": row[6],  # DVL Latitude
                     "LONG": row[7],  # DVL Longitude
-                    "DEPTH": 1 / float(row[13]) if row[13] else None  # Depth (inverse of paro_depth_m)
+                    "DEPTH": depth  # Depth (paro_depth_m)
                     # Add more columns as needed
                 })
     except FileNotFoundError:
