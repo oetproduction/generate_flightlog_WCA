@@ -1,6 +1,6 @@
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image  # Used for image file verification
 import sys  # For command line arguments
 
@@ -26,13 +26,15 @@ def read_tsv_data(filename):
     try:
         with open(filename, "r") as tsvfile:
             reader = csv.reader(tsvfile, delimiter='\t')
-            next(reader)  # Skip the header row if present
+            next(reader)  # Skip the header row
             for row in reader:
+                # Assuming the columns are in the same order as in the TSV structure
                 data_rows.append({
-                    "TIME": datetime.fromisoformat(row[0]),
-                    "LAT": row[1],
-                    "LONG": row[2],
-                    "DEPTH": row[3]
+                    "TIME": datetime.fromisoformat(row[0]),  # Timestamp
+                    "LAT": row[6],  # DVL Latitude
+                    "LONG": row[7],  # DVL Longitude
+                    "DEPTH": 1 / float(row[13]) if row[13] else None  # Depth (inverse of paro_depth_m)
+                    # Add more columns as needed
                 })
     except FileNotFoundError:
         print("TSV file not found.")
@@ -76,10 +78,20 @@ def read_image_filenames(image_folder):
 def estimate_location(image_data, data_rows):
     """Estimate location for each image based on timestamp."""
     for image in image_data:
-        closest_match = min(data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
-        image["LAT_EST"] = closest_match["LAT"]
-        image["LONG_EST"] = closest_match["LONG"]
-        image["ALTITUDE_EST"] = float(closest_match["DEPTH"])
+        # Filter data rows within 2 seconds of image timestamp
+        relevant_data_rows = [row for row in data_rows if abs(row["TIME"] - image["TIMESTAMP"]) <= timedelta(seconds=2)]
+        
+        if relevant_data_rows:
+            # Find the closest match based on time
+            closest_match = min(relevant_data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
+            image["LAT_EST"] = closest_match["LAT"]
+            image["LONG_EST"] = closest_match["LONG"]
+            image["ALTITUDE_EST"] = float(closest_match["DEPTH"])
+        else:
+            print(f"No matching data within 2 seconds for image {image['FILENAME']}.")
+            image["LAT_EST"] = None
+            image["LONG_EST"] = None
+            image["ALTITUDE_EST"] = None
 
 def generate_flight_log(image_data, image_folder):
     """Generate a flight log file from the image data."""
