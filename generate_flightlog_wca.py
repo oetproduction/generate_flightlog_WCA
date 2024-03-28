@@ -154,7 +154,8 @@ def main():
 
     print("Generating flight log...")
     generate_flight_log(image_data, image_folder)
-    print("Flight log generated successfully.")
+    flight_log_path = os.path.join(image_folder, "flight_log.txt")
+    print(f"Flight log generated successfully. Location: {flight_log_path}")
 
     print("Files examined: {}".format(len(image_data)))
     print("Data rows interpreted: {}".format(len(data_rows)))
