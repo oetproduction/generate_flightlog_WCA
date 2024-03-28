@@ -125,12 +125,21 @@ def main():
     image_folder = input("Enter the folder containing the images: ").strip('\"')
     is_valid_directory(image_folder)
 
+    print("Reading TSV data...")
     data_rows = read_tsv_data(tsv_filepath)
-    image_data = read_image_filenames(image_folder)
+    print("TSV data read successfully.")
 
-    estimate_location(image_data, data_rows)
+    print("Reading image filenames and timestamps...")
+    image_data = read_image_filenames(image_folder)
+    print("Image filenames and timestamps read successfully.")
+
+    print("Estimating image locations...")
     matches_made = estimate_location(image_data, data_rows)
+    print("Image locations estimated.")
+
+    print("Generating flight log...")
     generate_flight_log(image_data, image_folder)
+    print("Flight log generated successfully.")
 
     print("Files examined: {}".format(len(image_data)))
     print("Data rows interpreted: {}".format(len(data_rows)))
