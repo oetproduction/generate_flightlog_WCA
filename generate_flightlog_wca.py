@@ -29,17 +29,22 @@ def read_tsv_data(filename):
             next(reader)  # Skip the header row
             for row in reader:
                 # Assuming the columns are in the same order as in the TSV structure
+                depth = 1 / float(row[13]) if (row[13] and float(row[13]) != 0) else None
                 data_rows.append({
                     "TIME": datetime.fromisoformat(row[0]),  # Timestamp
                     "LAT": row[6],  # DVL Latitude
                     "LONG": row[7],  # DVL Longitude
-                    "DEPTH": 1 / float(row[13]) if row[13] else None  # Depth (inverse of paro_depth_m)
+                    "DEPTH": depth  # Depth (inverse of paro_depth_m)
                     # Add more columns as needed
                 })
     except FileNotFoundError:
         print("TSV file not found.")
         sys.exit(1)
+    except ValueError:
+        print("Error converting depth value to float.")
+        sys.exit(1)
     return data_rows
+
 
 def is_image_file(filename, image_folder):
     """Check if a file is an image using its MIME type."""
