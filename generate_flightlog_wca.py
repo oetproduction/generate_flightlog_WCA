@@ -32,8 +32,8 @@ def read_tsv_data(filename):
                 depth = -1 * float(row[13]) if row[13] else None
                 data_rows.append({
                     "TIME": datetime.fromisoformat(row[0]),  # Timestamp
-                    "LAT": row[6],  # DVL Latitude
-                    "LONG": row[7],  # DVL Longitude
+                    "LAT": row[16],  # DVL Latitude
+                    "LONG": row[17],  # DVL Longitude
                     "DEPTH": depth  # Depth (paro_depth_m)
                     # Add more columns as needed
                 })
