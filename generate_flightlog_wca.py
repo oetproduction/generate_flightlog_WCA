@@ -70,7 +70,14 @@ def parse_timestamp_from_filename(filename):
 def read_image_filenames(image_folder):
     """Read image filenames and timestamps from the given folder."""
     image_data = []
-    for filename in os.listdir(image_folder):
+    image_files = os.listdir(image_folder)
+    total_files = len(image_files)
+    processed_files = 0
+    
+    for filename in image_files:
+        processed_files += 1
+        print(f"Progress: {processed_files}/{total_files} files processed", end='\r')
+        
         if is_image_file(filename, image_folder):
             timestamp = parse_timestamp_from_filename(filename)
             if timestamp:
@@ -78,6 +85,8 @@ def read_image_filenames(image_folder):
                     "FILENAME": filename,
                     "TIMESTAMP": timestamp
                 })
+    
+    print()  # Move to the next line after the progress indicator is completed
     return image_data
 
 def estimate_location(image_data, data_rows):
@@ -133,9 +142,15 @@ def main():
     image_data = read_image_filenames(image_folder)
     print("Image filenames and timestamps read successfully.")
 
+    total_images = len(image_data)
+    processed_images = 0
+
     print("Estimating image locations...")
-    matches_made = estimate_location(image_data, data_rows)
-    print("Image locations estimated.")
+    for i, image in enumerate(image_data):
+        estimate_location(image_data[i:i+1], data_rows)
+        processed_images += 1
+        print(f"Progress: {processed_images}/{total_images} images processed", end='\r')
+    print("\nImage locations estimated.")
 
     print("Generating flight log...")
     generate_flight_log(image_data, image_folder)
@@ -143,7 +158,7 @@ def main():
 
     print("Files examined: {}".format(len(image_data)))
     print("Data rows interpreted: {}".format(len(data_rows)))
-    print("Matches Made: {}".format(matches_made))
+    print("Matches Made: {}".format(total_images))
 
 
 if __name__ == "__main__":
