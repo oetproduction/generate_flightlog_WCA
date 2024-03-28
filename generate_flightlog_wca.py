@@ -29,12 +29,12 @@ def read_tsv_data(filename):
             next(reader)  # Skip the header row
             for row in reader:
                 # Assuming the columns are in the same order as in the TSV structure
-                depth = 1 / float(row[13]) if (row[13] and float(row[13]) != 0) else None
+                depth = -1 * float(row[13]) if row[13] else None
                 data_rows.append({
                     "TIME": datetime.fromisoformat(row[0]),  # Timestamp
                     "LAT": row[6],  # DVL Latitude
                     "LONG": row[7],  # DVL Longitude
-                    "DEPTH": depth  # Depth (inverse of paro_depth_m)
+                    "DEPTH": depth  # Depth (paro_depth_m)
                     # Add more columns as needed
                 })
     except FileNotFoundError:
@@ -82,6 +82,7 @@ def read_image_filenames(image_folder):
 
 def estimate_location(image_data, data_rows):
     """Estimate location for each image based on timestamp."""
+    matches_made = 0  # Initialize the counter for matches made
     for image in image_data:
         # Filter data rows within 2 seconds of image timestamp
         relevant_data_rows = [row for row in data_rows if abs(row["TIME"] - image["TIMESTAMP"]) <= timedelta(seconds=2)]
@@ -92,11 +93,14 @@ def estimate_location(image_data, data_rows):
             image["LAT_EST"] = closest_match["LAT"]
             image["LONG_EST"] = closest_match["LONG"]
             image["ALTITUDE_EST"] = float(closest_match["DEPTH"])
+            matches_made += 1  # Increment the counter for matches made
         else:
             print(f"No matching data within 2 seconds for image {image['FILENAME']}.")
             image["LAT_EST"] = None
             image["LONG_EST"] = None
             image["ALTITUDE_EST"] = None
+    
+    return matches_made  # Return the number of matches made
 
 def generate_flight_log(image_data, image_folder):
     """Generate a flight log file from the image data."""
@@ -125,10 +129,13 @@ def main():
     image_data = read_image_filenames(image_folder)
 
     estimate_location(image_data, data_rows)
+    matches_made = estimate_location(image_data, data_rows)
     generate_flight_log(image_data, image_folder)
 
     print("Files examined: {}".format(len(image_data)))
     print("Data rows interpreted: {}".format(len(data_rows)))
+    print("Matches Made: {}".format(matches_made))
+
 
 if __name__ == "__main__":
     main()
