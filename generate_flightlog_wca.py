@@ -28,14 +28,12 @@ def read_tsv_data(filename):
             reader = csv.reader(tsvfile, delimiter='\t')
             next(reader)  # Skip the header row
             for row in reader:
-                # Assuming the columns are in the same order as in the TSV structure
                 depth = -1 * float(row[13]) if row[13] else None
                 data_rows.append({
-                    "TIME": datetime.fromisoformat(row[0]),  # Timestamp
-                    "LAT": row[16],  # DVL Latitude
-                    "LONG": row[17],  # DVL Longitude
-                    "DEPTH": depth  # Depth (paro_depth_m)
-                    # Add more columns as needed
+                    "TIME": datetime.fromisoformat(row[0]),
+                    "LAT": row[16],
+                    "LONG": row[17],
+                    "DEPTH": depth
                 })
     except FileNotFoundError:
         print("TSV file not found.")
@@ -44,7 +42,6 @@ def read_tsv_data(filename):
         print("Error converting depth value to float.")
         sys.exit(1)
     return data_rows
-
 
 def is_image_file(filename, image_folder):
     """Check if a file is an image using its MIME type."""
@@ -60,7 +57,7 @@ def parse_timestamp_from_filename(filename):
     if len(parts) < 2:
         print(f"Filename does not contain a valid timestamp: {filename}")
         return None
-    timestamp_str = parts[1].split(".")[0]  # Extract and clean timestamp
+    timestamp_str = parts[1].split(".")[0]
     try:
         return datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
     except ValueError:
@@ -91,25 +88,22 @@ def read_image_filenames(image_folder):
 
 def estimate_location(image_data, data_rows):
     """Estimate location for each image based on timestamp."""
-    matches_made = 0  # Initialize the counter for matches made
+    matches_made = 0
     for image in image_data:
-        # Filter data rows within 2 seconds of image timestamp
         relevant_data_rows = [row for row in data_rows if abs(row["TIME"] - image["TIMESTAMP"]) <= timedelta(seconds=2)]
-        
         if relevant_data_rows:
-            # Find the closest match based on time
             closest_match = min(relevant_data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
             image["LAT_EST"] = closest_match["LAT"]
             image["LONG_EST"] = closest_match["LONG"]
             image["ALTITUDE_EST"] = float(closest_match["DEPTH"])
-            matches_made += 1  # Increment the counter for matches made
+            matches_made += 1
         else:
             print(f"No matching data within 2 seconds for image {image['FILENAME']}.")
             image["LAT_EST"] = None
             image["LONG_EST"] = None
             image["ALTITUDE_EST"] = None
     
-    return matches_made  # Return the number of matches made
+    return matches_made
 
 def generate_flight_log(image_data, image_folder):
     """Generate a flight log file from the image data."""
@@ -117,12 +111,24 @@ def generate_flight_log(image_data, image_folder):
     if os.path.exists(flight_log_filename):
         print(f"Flight log file already exists: {flight_log_filename}")
         sys.exit(1)
-    
+
     unique_locations = set()
     with open(flight_log_filename, "w") as f:
-        f.write("FILENAME;LAT_EST;LONG_EST;ALTITUDE_EST\n")  # Header
+        f.write("FILENAME;LAT_EST;LONG_EST;ALTITUDE_EST;PITCH\n")  # Header with "Pitch"
         for image in image_data:
-            line = "{};{};{};{}".format(image["FILENAME"], image["LAT_EST"], image["LONG_EST"], image["ALTITUDE_EST"])
+            pitch = ""
+            if image["FILENAME"].startswith("P"):
+                pitch = -60
+            
+            line_elements = [
+                image["FILENAME"],
+                image["LAT_EST"] if image["LAT_EST"] is not None else "",
+                image["LONG_EST"] if image["LONG_EST"] is not None else "",
+                image["ALTITUDE_EST"] if image["ALTITUDE_EST"] is not None else "",
+                str(pitch) if pitch != "" else ""
+            ]
+            line = ";".join(map(str, line_elements))
+
             if line not in unique_locations:
                 f.write(line + "\n")
                 unique_locations.add(line)
@@ -142,25 +148,17 @@ def main():
     image_data = read_image_filenames(image_folder)
     print("Image filenames and timestamps read successfully.")
 
-    total_images = len(image_data)
-    processed_images = 0
-
     print("Estimating image locations...")
-    for i, image in enumerate(image_data):
-        estimate_location(image_data[i:i+1], data_rows)
-        processed_images += 1
-        print(f"Progress: {processed_images}/{total_images} images processed", end='\r')
-    print("\nImage locations estimated.")
+    matches_made = estimate_location(image_data, data_rows)
+    print(f"\nImage locations estimated. Total matches made: {matches_made}")
 
     print("Generating flight log...")
     generate_flight_log(image_data, image_folder)
     flight_log_path = os.path.join(image_folder, "flight_log.txt")
     print(f"Flight log generated successfully. Location: {flight_log_path}")
 
-    print("Files examined: {}".format(len(image_data)))
-    print("Data rows interpreted: {}".format(len(data_rows)))
-    print("Matches Made: {}".format(total_images))
-
+    print(f"Files examined: {len(image_data)}")
+    print(f"Data rows interpreted: {len(data_rows)}")
 
 if __name__ == "__main__":
     main()
