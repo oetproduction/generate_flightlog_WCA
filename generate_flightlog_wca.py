@@ -133,29 +133,33 @@ def estimate_location(image_data, data_rows, utm_zone):
     return matches_made
 
 def generate_flight_log(image_data, image_folder, coordinate_system):
+    """Generate a flight log file from the image data with selectable coordinate system (UTM or GPS)."""
     flight_log_filename = os.path.join(image_folder, "flight_log.txt")
     if os.path.exists(flight_log_filename):
         print(f"Flight log file already exists: {flight_log_filename}")
         sys.exit(1)
+
     with open(flight_log_filename, "w") as f:
         if coordinate_system == "UTM":
-            f.write("FILENAME;X;Y;ALTITUDE_EST;HEADING;PITCH;ROLL\n")
+            f.write("Name;X (East);Y (North);Alt;Yaw;Pitch;Roll\n")  # UTM specific header
             for image in image_data:
                 line = ";".join(str(x) for x in [
                     image["FILENAME"], image.get("UTM_X", ""), image.get("UTM_Y", ""),
                     image.get("ALTITUDE_EST", ""), image.get("HEADING", ""), image.get("PITCH", ""),
                     image.get("ROLL", "")
                 ])
+                f.write(line + "\n")
         else:  # GPS Coordinates
-            f.write("FILENAME;LAT;LONG;ALTITUDE_EST;HEADING;PITCH;ROLL\n")
+            f.write("Name;Lat;Long;Alt;Yaw;Pitch;Roll\n")  # GPS specific header
             for image in image_data:
                 line = ";".join(str(x) for x in [
                     image["FILENAME"], image.get("LAT", ""), image.get("LONG", ""),
                     image.get("ALTITUDE_EST", ""), image.get("HEADING", ""), image.get("PITCH", ""),
                     image.get("ROLL", "")
                 ])
-        f.write(line + "\n")
+                f.write(line + "\n")
     print(f"Flight log generated successfully. Location: {flight_log_filename}")
+
 
 def main():
     tsv_filepath = input("Enter the full path to the TSV file: ").strip('\"')
