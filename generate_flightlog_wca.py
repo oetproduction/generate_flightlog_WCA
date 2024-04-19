@@ -127,7 +127,7 @@ def estimate_location(image_data, data_rows, utm_zone):
             image.update({
                 "LAT": None, "LONG": None, "UTM_X": None, "UTM_Y": None,
                 "ALTITUDE_EST": None, "HEADING": None,
-                "PITCH": -50 if image["FILENAME"].startswith("P") else None, "ROLL": None
+                "PITCH": 40 if image["FILENAME"].startswith("P") else None, "ROLL": None
             })
             print(f"No matching TSV data within 2 seconds for image {image['FILENAME']}.")
     return matches_made
