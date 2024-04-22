@@ -74,14 +74,18 @@ def parse_timestamp_from_filename(filename, data_type):
     """Extract and parse the timestamp from an image filename."""
     try:
         if data_type == "WCA":
+            # WCA example: P211C7655_20231102013334.jpg
             parts = filename.split("_")
             timestamp_str = parts[1][:14]  # Assumes the timestamp is the first 14 characters after the first underscore
         elif data_type == "Zeuss":
-            timestamp_str = filename.split("_")[0]  # Assumes the timestamp is before the first underscore
+            # Zeuss example: 20231101T203856Z_0008_HERC_H.264_H2021_NA156_apo8_dtd4.mov.png
+            timestamp_str = filename.split("_")[0]  # Timestamp before the first underscore
+            timestamp_str = timestamp_str.replace('T', '').replace('Z', '')  # Remove 'T' and 'Z' for ISO 8601 format
         return datetime.strptime(timestamp_str, ZEUSS_FILENAME_TIMESTAMP_FORMAT)
     except ValueError:
         print(f"Error parsing timestamp in filename: {filename}")
         return None
+
 
 def read_image_filenames(image_folder, data_type):
     """Read all image filenames from a folder and extract their timestamps."""
