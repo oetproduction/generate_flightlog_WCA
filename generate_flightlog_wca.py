@@ -110,7 +110,7 @@ def estimate_location(image_data, data_rows, utm_zone):
             closest_match = min(relevant_data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
             lat, lon = closest_match.get("LAT"), closest_match.get("LONG")
             utm_x, utm_y = convert_to_utm(lat, lon, utm_zone)
-            base_pitch = -50 if image["FILENAME"].startswith("P") else 0
+            base_pitch = -50 if image["FILENAME"].startswith("C") else 0
             tsv_pitch = closest_match.get("PITCH", 0)
             image.update({
                 "LAT": lat,
