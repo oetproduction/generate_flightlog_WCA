@@ -4,66 +4,54 @@ from datetime import datetime, timedelta
 from PIL import Image
 import sys
 import simplekml
-import pyproj  # Import the projection library
-from pyproj import Proj, transform
+from pyproj import Proj
 
-# Configuration constants
-TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S"  # Correct format for timestamps in TSV files
-FILENAME_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"  # Format for timestamps in filenames
+# Constants
+TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S"
+FILENAME_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
 
 def is_valid_directory(path):
-    """Check if the specified directory is valid and accessible."""
+    """Ensure the directory exists."""
     if not os.path.isdir(path):
         print(f"Directory does not exist: {path}")
         sys.exit(1)
 
 def is_valid_file(path):
-    """Check if the specified file is valid and accessible."""
+    """Ensure the file exists."""
     if not os.path.isfile(path):
         print(f"File does not exist: {path}")
         sys.exit(1)
 
 def read_tsv_data(filename):
-    """Read and parse TSV data from a file."""
+    """Read TSV data and return a list of dictionaries for each row."""
+    print("Reading TSV data...")
     data_rows = []
     try:
         with open(filename, "r") as tsvfile:
             reader = csv.reader(tsvfile, delimiter='\t')
-            header = next(reader)
-            idx_map = {name: index for index, name in enumerate(header)}
+            headers = next(reader)
             for row in reader:
-                data_rows.append({
-                    "TIME": datetime.strptime(row[idx_map['time']], TIMESTAMP_FORMAT),
-                    "LAT": float(row[idx_map['usbl_lat']]) if row[idx_map['usbl_lat']] else None,
-                    "LONG": float(row[idx_map['usbl_lon']]) if row[idx_map['usbl_lon']] else None,
-                    "DEPTH": -abs(float(row[idx_map['paro_depth_m']])) if row[idx_map['paro_depth_m']] else None,
-                    "HEADING": float(row[idx_map['octans_heading']]) if row[idx_map['octans_heading']] else None,
-                    "PITCH": float(row[idx_map['octans_pitch']]) if row[idx_map['octans_pitch']] else None,
-                    "ROLL": float(row[idx_map['octans_roll']]) if row[idx_map['octans_roll']] else None
-                })
+                data_rows.append({headers[i]: row[i] for i in range(len(row))})
     except Exception as e:
         print(f"Error processing TSV file: {e}")
         sys.exit(1)
+    print("TSV data loaded successfully.")
     return data_rows
 
 def convert_to_utm(lat, lon, utm_zone):
-    """Convert latitude and longitude to UTM coordinates in the specified zone."""
-    if not lat or not lon:
+    """Convert geographic coordinates to UTM."""
+    if lat is None or lon is None:
         return None, None
     try:
-        zone_number = utm_zone[:-1]
-        hemisphere = 'north' if utm_zone[-1].upper() == 'N' else 'south'
-        proj_string = f"+proj=utm +zone={zone_number} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-        proj_utm = Proj(proj_string, preserve_units=False)
-        utm_x, utm_y = proj_utm(lon, lat)
-        if hemisphere == 'south':
-            utm_y -= 10000000.0
-        return utm_x, utm_y
+        proj_string = f"+proj=utm +zone={utm_zone[:-1]} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+        proj_utm = Proj(proj_string)
+        return proj_utm(lon, lat)
     except Exception as e:
         print(f"Failed to convert to UTM coordinates: {e}")
         return None, None
 
 def is_image_file(filename, image_folder):
+    """Check if a file is an image."""
     try:
         Image.open(os.path.join(image_folder, filename)).verify()
         return True
@@ -71,20 +59,20 @@ def is_image_file(filename, image_folder):
         return False
 
 def parse_timestamp_from_filename(filename):
-    """Extract and parse the timestamp from an image filename, handling different camera types."""
+    """Extract timestamp from filename."""
+    parts = filename.split('_')
     try:
-        if filename.startswith('C') or filename.startswith('P'):
-            # Assumes timestamp follows first underscore
-            timestamp_str = filename.split("_")[1][:14]
-        else:  # Default to 'Zeuss' camera type
-            timestamp_str = filename.split("_")[0]
-        return datetime.strptime(timestamp_str, FILENAME_TIMESTAMP_FORMAT)
+        if len(parts) > 1 and parts[0].isdigit():
+            return datetime.strptime(parts[0], FILENAME_TIMESTAMP_FORMAT)
+        else:
+            return None
     except ValueError:
         print(f"Error parsing timestamp in filename: {filename}")
         return None
 
 def read_image_filenames(image_folder):
-    """Read all image filenames from a folder and extract their timestamps."""
+    """Read image filenames from a folder."""
+    print("Reading image filenames and timestamps...")
     image_data = []
     image_files = os.listdir(image_folder)
     total_files = len(image_files)
@@ -93,137 +81,94 @@ def read_image_filenames(image_folder):
         if is_image_file(filename, image_folder):
             timestamp = parse_timestamp_from_filename(filename)
             if timestamp:
-                camera_type = 'Zeuss' if not filename[0].isalpha() else filename[0]
-                image_data.append({
-                    "FILENAME": filename,
-                    "TIMESTAMP": timestamp,
-                    "CAMERA_TYPE": camera_type
-                })
+                image_data.append({"FILENAME": filename, "TIMESTAMP": timestamp})
         processed_files += 1
-        print(f"Progress: {processed_files}/{total_files} files processed", end='\r')
-    print()  # Clean line after progress
+        print(f"Processing {processed_files}/{total_files} files", end='\r')
+    print("\nAll image filenames and timestamps read successfully.")
     return image_data
 
-def estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_focal_lengths):
-    """Estimate geographical location and sensor data for each image based on its timestamp."""
-    matches_made = 0
-    no_match_count = 0
-    convert_utm = bool(utm_zone.strip())  # Check if UTM zone is provided and not just blank
-    for image in list(image_data):  # Use list to safely modify while iterating
-        relevant_data_rows = [row for row in data_rows if abs(row["TIME"] - image["TIMESTAMP"]) <= timedelta(seconds=2)]
-        if relevant_data_rows:
-            closest_match = min(relevant_data_rows, key=lambda row: abs(row["TIME"] - image["TIMESTAMP"]))
-            if closest_match.get("LAT") is not None and closest_match.get("LONG") is not None:
-                utm_x, utm_y = (convert_to_utm(closest_match["LAT"], closest_match["LONG"], utm_zone) if convert_utm else ("Not Applicable", "Not Applicable"))
-                image.update({
-                    "LAT": closest_match["LAT"],
-                    "LONG": closest_match["LONG"],
-                    "UTM_X": utm_x,
-                    "UTM_Y": utm_y,
-                    "ALTITUDE_EST": closest_match["DEPTH"],
-                    "HEADING": closest_match["HEADING"],
-                    "PITCH": camera_pitches.get(image["CAMERA_TYPE"], "Not Specified"),
-                    "ROLL": closest_match["ROLL"],
-                    "FOCAL_LENGTH": camera_focal_lengths.get(image["CAMERA_TYPE"], "Not Specified")
-                })
-                matches_made += 1
-            else:
-                image_data.remove(image)
-                no_match_count += 1
-        else:
-            image_data.remove(image)
-            no_match_count += 1
-    return matches_made, no_match_count
-
-def generate_flight_log(image_data, image_folder, coordinate_system, camera_pitches, camera_focal_lengths, flight_log_filename):
+def generate_flight_log(image_data, flight_log_filename, coordinate_system, camera_settings):
+    """Generate a flight log file only for entries with valid coordinate data."""
+    print(f"Generating flight log at {flight_log_filename}...")
     if os.path.exists(flight_log_filename):
         print(f"Flight log file already exists: {flight_log_filename}")
         return
 
-    with open(flight_log_filename, "w") as f:
-        header = "Name;X (East);Y (North);Alt;Yaw;Pitch;Roll;FocalLength\n" if coordinate_system == "UTM" \
-            else "Name;Lat;Long;Alt;Yaw;Pitch;Roll;FocalLength\n"
-        f.write(header)
+    with open(flight_log_filename, "w") as file:
+        # Define the header based on the coordinate system chosen
+        header = "Name;X (East);Y (North);Alt;Yaw;Pitch;Roll;FocalLength\n" if coordinate_system == "UTM" else "Name;Lat;Long;Alt;Yaw;Pitch;Roll;FocalLength\n"
+        file.write(header)
+        
+        # Iterate over each image's data and format it correctly
         for image in image_data:
-            if coordinate_system == "UTM":
+            if coordinate_system == "UTM" and image.get("UTM_X") and image.get("UTM_Y"):
                 line_elements = [
                     image["FILENAME"],
-                    image.get("UTM_X", "Not Applicable"), 
-                    image.get("UTM_Y", "Not Applicable"),
-                    image["ALTITUDE_EST"], 
-                    image["HEADING"], 
-                    image["PITCH"], 
-                    image["ROLL"], 
-                    image["FOCAL_LENGTH"]
+                    image["UTM_X"], 
+                    image["UTM_Y"],
+                    image.get("ALTITUDE_EST", "N/A"),
+                    image.get("HEADING", "N/A"),
+                    camera_settings.get(image.get("CAMERA_TYPE", ""), {}).get("pitch", "N/A"),
+                    image.get("ROLL", "N/A"),
+                    camera_settings.get(image.get("CAMERA_TYPE", ""), {}).get("focal_length", "N/A")
                 ]
-            else:  # GPS Coordinates
+            elif coordinate_system == "GPS" and image.get("LAT") and image.get("LONG"):
                 line_elements = [
                     image["FILENAME"],
                     image["LAT"], 
                     image["LONG"],
-                    image["ALTITUDE_EST"], 
-                    image["HEADING"], 
-                    image["PITCH"], 
-                    image["ROLL"], 
-                    image["FOCAL_LENGTH"]
+                    image.get("ALTITUDE_EST", "N/A"),
+                    image.get("HEADING", "N/A"),
+                    camera_settings.get(image.get("CAMERA_TYPE", ""), {}).get("pitch", "N/A"),
+                    image.get("ROLL", "N/A"),
+                    camera_settings.get(image.get("CAMERA_TYPE", ""), {}).get("focal_length", "N/A")
                 ]
+            else:
+                continue  # Skip writing this line if coordinates are not available
+            
+            # Join elements and write to the flight log if valid
             line = ";".join(map(str, line_elements))
-            f.write(line + "\n")
-    print(f"Flight log generated successfully. Location: {flight_log_filename}")
+            file.write(line + "\n")
+    print(f"Flight log generated successfully at: {flight_log_filename}")
 
-def generate_kml(image_data, image_folder):
+
+def generate_kml(image_data, kml_filename):
+    """Generate a KML file for Google Earth."""
+    print(f"Generating KML file at {kml_filename}...")
     kml = simplekml.Kml()
     for image in image_data:
-        if image.get("LAT") != "Not Available" and image.get("LONG") != "Not Available":
-            pnt = kml.newpoint(name=image['FILENAME'], coords=[(float(image['LONG']), float(image['LAT']))])
-            pnt.description = f"Altitude: {image['ALTITUDE_EST']} meters\nHeading: {image['HEADING']}\nPitch: {image['PITCH']}\nRoll: {image['ROLL']}\nFocal Length: {image['FOCAL_LENGTH']}"
-            pnt.altitudemode = simplekml.AltitudeMode.relativetoground
-            pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/shapes/camera.png'
-    kml.save(os.path.join(image_folder, "flight_data.kml"))
-    print(f"KML file generated successfully. Location: {os.path.join(image_folder, 'flight_data.kml')}")
+        if image.get("LAT") and image.get("LONG"):
+            pnt = kml.newpoint(name=image['FILENAME'], coords=[(image['LONG'], image['LAT'])])
+            pnt.description = f"Altitude: {image.get('ALTITUDE_EST', 'N/A')} meters"
+    kml.save(kml_filename)
+    print(f"KML file generated successfully at: {kml_filename}")
 
 def main():
-    # Set default values for pitch and focal length settings
-    default_pitches = {'C': 30, 'P': 85, 'Zeuss': None}  # Zeuss pitch is not set by default
-    default_focal_lengths = {'C': '16mm', 'P': '14mm', 'Zeuss': None}  # Zeuss focal length is not defined by default
-
-    # Optionally, ask users if they want to change these defaults
-    change_defaults = input("Do you want to change the default settings for pitch and focal length? (y/n): ").lower()
-    if change_defaults == 'y':
-        pitch_c = float(input("Enter the pitch for Cinema Camera (C) [Default: 30]: ") or default_pitches['C'])
-        pitch_p = float(input("Enter the pitch for Port Camera (P) [Default: 85]: ") or default_pitches['P'])
-        pitch_input = input("Enter the pitch for Zeuss Camera (default/no prefix) [Leave blank if not setting]: ")
-        pitch_zeuss = float(pitch_input) if pitch_input.strip() else None
-
-        focal_c = input("Enter the focal length for Cinema Camera (C) [Default: 16mm]: ") or default_focal_lengths['C']
-        focal_p = input("Enter the focal length for Port Camera (P) [Default: 14mm]: ") or default_focal_lengths['P']
-        focal_zeuss = input("Enter the focal length for Zeuss Camera (default/no prefix) [Leave blank if not setting]: ")
-    else:
-        pitch_c, pitch_p, pitch_zeuss = default_pitches.values()
-        focal_c, focal_p, focal_zeuss = default_focal_lengths.values()
-
-    camera_pitches = {'C': pitch_c, 'P': pitch_p, 'Zeuss': pitch_zeuss}
-    camera_focal_lengths = {'C': focal_c, 'P': focal_p, 'Zeuss': focal_zeuss}
+    # Configuration and input gathering
+    default_camera_settings = {
+        'C': {'pitch': 30, 'focal_length': '16mm'},
+        'P': {'pitch': 85, 'focal_length': '14mm'},
+        'Zeuss': {'pitch': None, 'focal_length': None}
+    }
 
     tsv_filepath = input("Enter the full path to the TSV file: ").strip('\"')
-    is_valid_file(tsv_filepath)
     image_folder = input("Enter the folder containing the images: ").strip('\"')
-    is_valid_directory(image_folder)
     utm_zone = input("Enter the UTM zone number for coordinate conversion (leave blank for GPS coordinates): ").strip()
     coordinate_system = "UTM" if utm_zone.strip() else "GPS"
-    print("Reading TSV data...")
+
+    # Validation
+    is_valid_file(tsv_filepath)
+    is_valid_directory(image_folder)
+
+    # Data processing
     data_rows = read_tsv_data(tsv_filepath)
-    print("Reading image filenames and timestamps...")
     image_data = read_image_filenames(image_folder)
-    print("Estimating image locations...")
-    matches_made, no_match_count = estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_focal_lengths)
-    print("Generating flight log...")
-    generate_flight_log(image_data, image_folder, coordinate_system)
-    print("Generating KML file for Google Earth...")
-    generate_kml(image_data, image_folder)
-    print(f"Files examined: {len(image_data)}")
-    print(f"Data rows interpreted: {len(data_rows)}")
-    print(f"Images with no matches: {no_match_count}")
+    flight_log_filename = os.path.join(image_folder, "general_flight_log.txt")
+    kml_filename = os.path.join(image_folder, "flight_data.kml")
+
+    # Output generation
+    generate_flight_log(image_data, flight_log_filename, coordinate_system, default_camera_settings)
+    generate_kml(image_data, kml_filename)
 
 if __name__ == "__main__":
     main()
