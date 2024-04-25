@@ -3,24 +3,14 @@ import csv
 from datetime import datetime, timedelta
 from PIL import Image
 import sys
+import simplekml
 import pyproj  # Import the projection library
 from pyproj import Proj, transform
-import simplekml
 
 # Configuration constants
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S"  # Correct format for timestamps in TSV files
 FILENAME_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"  # Format for timestamps in filenames
 
-def generate_kml(image_data, image_folder):
-    kml = simplekml.Kml()
-    for image in image_data:
-        if 'LAT' in image and 'LONG' in image and image['LAT'] != "Not Available" and image['LONG'] != "Not Available":
-            pnt = kml.newpoint(name=image['FILENAME'], coords=[(float(image['LONG']), float(image['LAT']))])
-            pnt.description = f"Altitude: {image['ALTITUDE_EST']} meters\nHeading: {image['HEADING']}\nPitch: {image['PITCH']}\nRoll: {image['ROLL']}\nFocal Length: {image['FOCAL_LENGTH']}"
-            pnt.altitudemode = simplekml.AltitudeMode.relativetoground
-            pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/shapes/camera.png'
-    kml.save(os.path.join(image_folder, "flight_data.kml"))
-    print(f"KML file generated successfully. Location: {os.path.join(image_folder, 'flight_data.kml')}")
 def is_valid_directory(path):
     """Check if the specified directory is valid and accessible."""
     if not os.path.isdir(path):
@@ -115,6 +105,7 @@ def read_image_filenames(image_folder):
     return image_data
 
 def estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_focal_lengths):
+    """Estimate geographical location and sensor data for each image based on its timestamp."""
     matches_made = 0
     no_match_count = 0
     convert_utm = bool(utm_zone.strip())  # Check if UTM zone is provided and not just blank
@@ -131,9 +122,9 @@ def estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_fo
                     "UTM_Y": utm_y,
                     "ALTITUDE_EST": closest_match["DEPTH"],
                     "HEADING": closest_match["HEADING"],
-                    "PITCH": camera_pitches.get(image["CAMERA_TYPE"]),
+                    "PITCH": camera_pitches.get(image["CAMERA_TYPE"], "Not Specified"),
                     "ROLL": closest_match["ROLL"],
-                    "FOCAL_LENGTH": camera_focal_lengths.get(image["CAMERA_TYPE"])
+                    "FOCAL_LENGTH": camera_focal_lengths.get(image["CAMERA_TYPE"], "Not Specified")
                 })
                 matches_made += 1
             else:
@@ -144,13 +135,10 @@ def estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_fo
             no_match_count += 1
     return matches_made, no_match_count
 
-
-def generate_flight_log(image_data, image_folder, coordinate_system):
-    """Generate a flight log file from the image data with selectable coordinate system (UTM or GPS)."""
-    flight_log_filename = os.path.join(image_folder, "flight_log.txt")
+def generate_flight_log(image_data, image_folder, coordinate_system, camera_pitches, camera_focal_lengths, flight_log_filename):
     if os.path.exists(flight_log_filename):
         print(f"Flight log file already exists: {flight_log_filename}")
-        sys.exit(1)
+        return
 
     with open(flight_log_filename, "w") as f:
         header = "Name;X (East);Y (North);Alt;Yaw;Pitch;Roll;FocalLength\n" if coordinate_system == "UTM" \
@@ -160,8 +148,8 @@ def generate_flight_log(image_data, image_folder, coordinate_system):
             if coordinate_system == "UTM":
                 line_elements = [
                     image["FILENAME"],
-                    image["UTM_X"], 
-                    image["UTM_Y"],
+                    image.get("UTM_X", "Not Applicable"), 
+                    image.get("UTM_Y", "Not Applicable"),
                     image["ALTITUDE_EST"], 
                     image["HEADING"], 
                     image["PITCH"], 
@@ -183,20 +171,33 @@ def generate_flight_log(image_data, image_folder, coordinate_system):
             f.write(line + "\n")
     print(f"Flight log generated successfully. Location: {flight_log_filename}")
 
+def generate_kml(image_data, image_folder):
+    kml = simplekml.Kml()
+    for image in image_data:
+        if image.get("LAT") != "Not Available" and image.get("LONG") != "Not Available":
+            pnt = kml.newpoint(name=image['FILENAME'], coords=[(float(image['LONG']), float(image['LAT']))])
+            pnt.description = f"Altitude: {image['ALTITUDE_EST']} meters\nHeading: {image['HEADING']}\nPitch: {image['PITCH']}\nRoll: {image['ROLL']}\nFocal Length: {image['FOCAL_LENGTH']}"
+            pnt.altitudemode = simplekml.AltitudeMode.relativetoground
+            pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/shapes/camera.png'
+    kml.save(os.path.join(image_folder, "flight_data.kml"))
+    print(f"KML file generated successfully. Location: {os.path.join(image_folder, 'flight_data.kml')}")
+
 def main():
     # Set default values for pitch and focal length settings
-    default_pitches = {'C': 30, 'P': 85, 'Zeuss': 80}
-    default_focal_lengths = {'C': '16mm', 'P': '14mm', 'Zeuss': '20mm'}
+    default_pitches = {'C': 30, 'P': 85, 'Zeuss': None}  # Zeuss pitch is not set by default
+    default_focal_lengths = {'C': '16mm', 'P': '14mm', 'Zeuss': None}  # Zeuss focal length is not defined by default
 
     # Optionally, ask users if they want to change these defaults
     change_defaults = input("Do you want to change the default settings for pitch and focal length? (y/n): ").lower()
     if change_defaults == 'y':
         pitch_c = float(input("Enter the pitch for Cinema Camera (C) [Default: 30]: ") or default_pitches['C'])
         pitch_p = float(input("Enter the pitch for Port Camera (P) [Default: 85]: ") or default_pitches['P'])
-        pitch_zeuss = float(input("Enter the pitch for Zeuss Camera (default/no prefix) [Default: 80]: ") or default_pitches['Zeuss'])
+        pitch_input = input("Enter the pitch for Zeuss Camera (default/no prefix) [Leave blank if not setting]: ")
+        pitch_zeuss = float(pitch_input) if pitch_input.strip() else None
+
         focal_c = input("Enter the focal length for Cinema Camera (C) [Default: 16mm]: ") or default_focal_lengths['C']
         focal_p = input("Enter the focal length for Port Camera (P) [Default: 14mm]: ") or default_focal_lengths['P']
-        focal_zeuss = input("Enter the focal length for Zeuss Camera (default/no prefix) [Default: 20mm]: ") or default_focal_lengths['Zeuss']
+        focal_zeuss = input("Enter the focal length for Zeuss Camera (default/no prefix) [Leave blank if not setting]: ")
     else:
         pitch_c, pitch_p, pitch_zeuss = default_pitches.values()
         focal_c, focal_p, focal_zeuss = default_focal_lengths.values()
@@ -216,7 +217,6 @@ def main():
     image_data = read_image_filenames(image_folder)
     print("Estimating image locations...")
     matches_made, no_match_count = estimate_location(image_data, data_rows, utm_zone, camera_pitches, camera_focal_lengths)
-    print(f"Image locations estimated. Total matches made: {matches_made}")
     print("Generating flight log...")
     generate_flight_log(image_data, image_folder, coordinate_system)
     print("Generating KML file for Google Earth...")
@@ -227,4 +227,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
